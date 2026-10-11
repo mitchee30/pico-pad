@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pico Pad 手柄测试</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --text: #1f1e1b; --muted: #6b6a64; --line: #dddbd2;
+    --accent: #0f7b5f; --accent-soft: #d9f0e7; --warn: #a15c07; --zone: #eceae3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171715; --card: #22221f; --text: #ecebe6; --muted: #9c9a92; --line: #3a3935;
+      --accent: #4fd1a5; --accent-soft: #1d3a30; --warn: #e8a54b; --zone: #2c2b28;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 40px 16px; text-align: center; color: var(--muted); }
+  .empty b { display: block; color: var(--text); font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .pad { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .pad-head { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  .pad-name { font-weight: 600; word-break: break-all; }
+  .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .cols { display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+  .sticks { display: flex; gap: 16px; flex-wrap: wrap; }
+  .stick svg { width: 128px; height: 128px; display: block; }
+  .label { font-size: 12px; color: var(--muted); margin-top: 4px; text-align: center; font-variant-numeric: tabular-nums; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+  .axis { display: grid; grid-template-columns: 56px 1fr 60px 76px; align-items: center; gap: 10px;
+          font-size: 13px; font-variant-numeric: tabular-nums; margin: 6px 0; }
+  .bar { position: relative; height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+  .bar .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); }
+  .val { text-align: right; }
+  .jit { color: var(--muted); text-align: right; }
+  .jit.bad { color: var(--warn); }
+  .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; margin-top: 16px; }
+  .btn { border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 12px;
+         color: var(--muted); background: var(--bg); }
+  .btn b { display: block; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .btn.on b { color: var(--accent); }
+  .log { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .log ol { margin: 4px 0 0; padding-left: 20px; font-variant-numeric: tabular-nums; }
+  .notes { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .notes li { margin: 2px 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pico Pad 手柄测试</h1>
+  <p class="sub">用来检查 M3 的 USB 手柄：轴是否平滑、按键编号对不对、静止时抖不抖。任何手柄都能用。</p>
+
+  <div id="empty" class="empty">
+    <b>按一下手柄上的任意键</b>
+    浏览器要等你按键之后才会把手柄交给网页，没反应时先确认电脑本身认到了手柄。
+  </div>
+  <div id="pads"></div>
+
+  <div class="log" id="logbox" hidden>
+    连接记录
+    <ol id="log"></ol>
+  </div>
+
+  <ul class="notes">
+    <li>按键下方的小字是 <code>firmware/config.py</code> 里 <code>BUTTONS</code> 的顺序，M3 的描述符会照这个顺序编号（网页从 0 开始，HID 从 1 开始）。</li>
+    <li>"1 秒抖动"要在不碰摇杆的时候看。超过 ±0.02 就说明死区不够，把 <code>DEADZONE</code> 调大一点。</li>
+    <li>"更新/秒"只在摇杆或按键在动时才有意义：多数浏览器只有数据变了才更新时间戳。</li>
+    <li>摇杆图里的灰色圆是 10% 的死区示意。</li>
+  </ul>
+</main>
+
+<script>
+  const PICO_NAMES = ["STICK", "A", "B", "X", "Y", "START", "SELECT"];
+  const JITTER_WARN = 0.02;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const padsEl = document.getElementById("pads");
+  const emptyEl = document.getElementById("empty");
+  const logEl = document.getElementById("log");
+  const pads = new Map();
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function svg(tag, attrs) {
+    const e = document.createElementNS(SVG_NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function makeStick(label) {
+    const wrap = el("div", "stick");
+    const s = svg("svg", { viewBox: "0 0 128 128", role: "img", "aria-label": label });
+    s.append(
+      svg("circle", { cx: 64, cy: 64, r: 56, fill: "none", stroke: "var(--line)", "stroke-width": 1.5 }),
+      svg("circle", { cx: 64, cy: 64, r: 5.6, fill: "var(--zone)" }),
+      svg("line", { x1: 8, y1: 64, x2: 120, y2: 64, stroke: "var(--line)" }),
+      svg("line", { x1: 64, y1: 8, x2: 64, y2: 120, stroke: "var(--line)" }),
+    );
+    const dot = svg("circle", { cx: 64, cy: 64, r: 7, fill: "var(--accent)" });
+    s.append(dot);
+    const text = el("div", "label", label);
+    wrap.append(s, text);
+    return { wrap, dot, text, label };
+  }
+
+  function build(gp) {
+    const root = el("section", "pad");
+    const head = el("div", "pad-head");
+    const name = el("div", "pad-name", gp.id || "未命名手柄");
+    const meta = el("div", "meta");
+    head.append(name, meta);
+
+    const cols = el("div", "cols");
+    const sticks = el("div", "sticks");
+    const stickViews = [];
+    for (let i = 0; i + 1 < gp.axes.length && i < 4; i += 2) {
+      const v = makeStick(i === 0 ? "左摇杆（轴 0、1）" : "右摇杆（轴 2、3）");
+      stickViews.push({ view: v, ax: i });
+      sticks.append(v.wrap);
+    }
+
+    const axesBox = el("div");
+    axesBox.append(el("h2", "", "轴"));
+    const axisViews = gp.axes.map((_, i) => {
+      const row = el("div", "axis");
+      const bar = el("div", "bar");
+      const fill = el("div", "fill");
+      bar.append(el("div", "mid"), fill);
+      const val = el("span", "val", "0.000");
+      const jit = el("span", "jit", "±—");
+      jit.title = "最近 1 秒内的抖动（半幅）";
+      row.append(el("span", "", "轴 " + i), bar, val, jit);
+      axesBox.append(row);
+      return { fill, val, jit, min: Infinity, max: -Infinity };
+    });
+    if (!gp.axes.length) axesBox.append(el("div", "meta", "这个手柄没有报告任何轴"));
+
+    cols.append(sticks, axesBox);
+
+    const btnBox = el("div", "buttons");
+    const btnViews = gp.buttons.map((_, i) => {
+      const b = el("div", "btn");
+      b.append(el("b", "", String(i)));
+      b.append(document.createTextNode(PICO_NAMES[i] || " "));
+      btnBox.append(b);
+      return b;
+    });
+
+    root.append(head, cols, btnBox);
+    padsEl.append(root);
+
+    return {
+      id: gp.id, axesN: gp.axes.length, btnN: gp.buttons.length,
+      root, meta, stickViews, axisViews, btnViews,
+      lastTs: null, updates: 0, rate: 0, windowStart: performance.now(),
+    };
+  }
+
+  function update(gp, p, now) {
+    if (gp.timestamp !== p.lastTs) { p.updates++; p.lastTs = gp.timestamp; }
+
+    gp.axes.forEach((v, i) => {
+      const a = p.axisViews[i];
+      const c = Math.max(-1, Math.min(1, v));
+      a.fill.style.left = (c < 0 ? 50 + c * 50 : 50) + "%";
+      a.fill.style.width = Math.abs(c) * 50 + "%";
+      a.val.textContent = (v >= 0 ? "+" : "") + v.toFixed(3);
+      a.min = Math.min(a.min, v);
+      a.max = Math.max(a.max, v);
+    });
+
+    for (const { view, ax } of p.stickViews) {
+      const x = Math.max(-1, Math.min(1, gp.axes[ax]));
+      const y = Math.max(-1, Math.min(1, gp.axes[ax + 1]));
+      view.dot.setAttribute("cx", 64 + x * 56);
+      view.dot.setAttribute("cy", 64 + y * 56);
+      view.text.textContent = view.label + "  " + x.toFixed(2) + ", " + y.toFixed(2);
+    }
+
+    gp.buttons.forEach((b, i) => {
+      const on = b.pressed || b.value > 0.5;
+      p.btnViews[i].classList.toggle("on", on);
+    });
+
+    if (now - p.windowStart >= 1000) {
+      const secs = (now - p.windowStart) / 1000;
+      p.rate = Math.round(p.updates / secs);
+      p.updates = 0;
+      p.windowStart = now;
+      for (const a of p.axisViews) {
+        const half = isFinite(a.min) ? (a.max - a.min) / 2 : 0;
+        a.jit.textContent = "±" + half.toFixed(3);
+        a.jit.classList.toggle("bad", half > JITTER_WARN);
+        a.min = Infinity;
+        a.max = -Infinity;
+      }
+    }
+
+    p.meta.textContent =
+      "#" + gp.index + " · mapping: " + (gp.mapping || "无") +
+      " · " + gp.axes.length + " 轴 " + gp.buttons.length + " 键" +
+      " · 更新 " + p.rate + " 次/秒";
+  }
+
+  function frame(now) {
+    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    const seen = new Set();
+    for (const gp of list) {
+      if (!gp || !gp.connected) continue;
+      seen.add(gp.index);
+      let p = pads.get(gp.index);
+      if (!p || p.id !== gp.id || p.axesN !== gp.axes.length || p.btnN !== gp.buttons.length) {
+        if (p) p.root.remove();
+        p = build(gp);
+        pads.set(gp.index, p);
+      }
+      update(gp, p, now);
+    }
+    for (const [i, p] of pads) {
+      if (!seen.has(i)) { p.root.remove(); pads.delete(i); }
+    }
+    emptyEl.hidden = seen.size > 0;
+    requestAnimationFrame(frame);
+  }
+
+  function log(text) {
+    const li = el("li", "", new Date().toLocaleTimeString() + "  " + text);
+    logEl.prepend(li);
+    document.getElementById("logbox").hidden = false;
+    while (logEl.children.length > 8) logEl.lastChild.remove();
+  }
+
+  window.addEventListener("gamepadconnected", (e) => log("连接 #" + e.gamepad.index + "  " + e.gamepad.id));
+  window.addEventListener("gamepaddisconnected", (e) => log("断开 #" + e.gamepad.index + "  " + e.gamepad.id));
+
+  if (!navigator.getGamepads) {
+    emptyEl.innerHTML = "<b>这个浏览器不支持 Gamepad API</b>换 Chrome、Edge 或 Firefox 试试。";
+  } else {
+    requestAnimationFrame(frame);
+  }
+</script>
+</body>
+</html>

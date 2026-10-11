@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+._*
+
+# Python
+__pycache__/
+*.pyc
+
+# circup 装到板子上的库不进 git，用 firmware/requirements.txt 重装
+firmware/lib/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 以后网页端如果用到 npm
+node_modules/
