@@ -73,6 +73,61 @@ def apply_deadzone(v, dz):
     return mag if v > 0 else -mag
 
 
+def detect_active_low(pin):
+    """开机时判断一个按键是"按下 = 低"还是"按下 = 高"。
+
+    分别打开内部上拉和下拉各读一次：
+      - 两次都是 1：外面有上拉电阻（比如扩展板上的按键），按下是 0
+      - 两次都是 0：外面有下拉电阻，按下是 1
+      - 读数跟着内部电阻变：外面什么都没接（散装按键接 GND），用内部上拉，按下是 0
+    返回 (按下是否为低电平, 说明文字)。
+    """
+    io = digitalio.DigitalInOut(pin)
+    io.switch_to_input(pull=digitalio.Pull.UP)
+    time.sleep(0.002)
+    with_up = io.value
+    io.switch_to_input(pull=digitalio.Pull.DOWN)
+    time.sleep(0.002)
+    with_down = io.value
+    io.deinit()
+    if with_up and with_down:
+        return True, "board pull-up, pressed=LOW"
+    if not with_up and not with_down:
+        return False, "board pull-down, pressed=HIGH"
+    return True, "plain switch, pressed=LOW"
+
+
+def setup_buttons():
+    """按极性把按键分成两组，各建一个 keypad.Keys。返回 [(keys, 名字列表), ...]。"""
+    polarity = []
+    print("Buttons (don't press anything now):")
+    for name, pin in config.BUTTONS:
+        if config.BUTTON_MODE == "low":
+            active_low, how = True, "forced, pressed=LOW"
+        elif config.BUTTON_MODE == "high":
+            active_low, how = False, "forced, pressed=HIGH"
+        else:
+            active_low, how = detect_active_low(pin)
+        polarity.append(active_low)
+        print("  %-6s %-5s %s" % (name, str(pin).replace("board.", ""), how))
+
+    groups = []
+    for active_low in (True, False):
+        chosen = [b for b, low in zip(config.BUTTONS, polarity) if low == active_low]
+        if not chosen:
+            continue
+        keys = keypad.Keys(
+            tuple(pin for _, pin in chosen),
+            value_when_pressed=not active_low,
+            # 按下为低：开内部上拉（散装按键需要，板子自带上拉也不冲突）
+            # 按下为高：板子已经有下拉，不再开内部电阻
+            pull=active_low,
+            interval=config.DEBOUNCE,
+        )
+        groups.append((keys, [name for name, _ in chosen]))
+    return groups
+
+
 def make_led():
     try:
         led = digitalio.DigitalInOut(board.LED)
@@ -112,12 +167,7 @@ def main():
             print("  ! %s noise is bigger than DEADZONE, raise DEADZONE in config.py" % name)
 
     names = [b[0] for b in config.BUTTONS]
-    keys = keypad.Keys(
-        tuple(b[1] for b in config.BUTTONS),
-        value_when_pressed=False,
-        pull=True,
-        interval=config.DEBOUNCE,
-    )
+    groups = setup_buttons()
     event = keypad.Event()
     held = set()
 
@@ -130,14 +180,15 @@ def main():
 
     while True:
         # 按键事件：keypad 在后台扫描和消抖，这里只取事件
-        while keys.events.get_into(event):
-            name = names[event.key_number]
-            if event.pressed:
-                held.add(name)
-                print("[btn] %s down" % name)
-            else:
-                held.discard(name)
-                print("[btn] %s up" % name)
+        for keys, group_names in groups:
+            while keys.events.get_into(event):
+                name = group_names[event.key_number]
+                if event.pressed:
+                    held.add(name)
+                    print("[btn] %s down" % name)
+                else:
+                    held.discard(name)
+                    print("[btn] %s up" % name)
 
         now = time.monotonic()
         if now - last_print >= config.PRINT_INTERVAL:

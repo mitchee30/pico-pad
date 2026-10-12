@@ -30,7 +30,7 @@ flowchart LR
 
 ## 快速开始（M1）
 
-1. 按 [hardware/README.md](hardware/README.md) 在面包板上接好摇杆和按键（摇杆接 **3V3**，不要接 5V）。
+1. 把 Pico 插进 PicoBlock 扩展板中间的黑色排母，再按 [hardware/README.md](hardware/README.md) 接摇杆和板子上的 4 个方向键，一共 9 根线（摇杆接 **3.3V**，不要接 5V）。
 2. 按 [firmware/README.md](firmware/README.md) 给 Pico 刷 CircuitPython。
 3. 复制固件：
    ```bash
@@ -53,7 +53,7 @@ pico-pad/
 │   └── requirements.txt
 ├── game/            网页端
 │   └── tester.html  手柄测试页（Gamepad API）
-├── hardware/        零件清单、引脚表、电路
+├── hardware/        扩展板接线、零件清单、引脚表、电路
 └── docs/
     ├── BACKLOG.md   路线图（M0–M7）
     └── protocol.md  串口协议

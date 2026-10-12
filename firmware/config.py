@@ -22,17 +22,25 @@ ADC_SAMPLES = 4
 CALIBRATION_SAMPLES = 64
 
 # ---------- 按键 ----------
-# 每个按键一脚接 GPIO，另一脚接 GND；固件里开内部上拉，按下读到低电平。
+# 默认是 PicoBlock 扩展板：4 个蓝色按键从板子上的 UP/DOWN/LEFT/RIGHT 排针接出来。
 # 顺序决定按键编号（之后 HID 手柄的按键 1、2、3…也按这个顺序）。
 BUTTONS = (
-    ("STICK", board.GP2),    # 摇杆按下（模块上的 SW），4 脚
-    ("A", board.GP10),       # 14 脚
-    ("B", board.GP11),       # 15 脚
-    ("X", board.GP12),       # 16 脚
-    ("Y", board.GP13),       # 17 脚
-    ("START", board.GP14),   # 19 脚
-    ("SELECT", board.GP15),  # 20 脚
+    ("STICK", board.GP2),   # 摇杆模块的 SW，4 脚
+    ("UP", board.GP10),     # 板子方向键排针 UP，14 脚
+    ("DOWN", board.GP11),   # DOWN，15 脚
+    ("LEFT", board.GP12),   # LEFT，16 脚
+    ("RIGHT", board.GP13),  # RIGHT，17 脚
+    # 以后想多两个键：面包板上插两个按键（一脚接 GPIO、一脚接 GND），再打开下面两行
+    # ("START", board.GP14),  # 19 脚
+    # ("SELECT", board.GP15), # 20 脚
 )
+
+# 按键按下是高电平还是低电平：
+#   "auto"：开机时自动判断（推荐）。板子上的按键自带上拉或下拉电阻，散装按键什么都不带，都能认出来
+#   "low"：全部按"按下 = 低电平"处理（按键接 GND）
+#   "high"：全部按"按下 = 高电平"处理（按键接 3V3，外面要有下拉电阻）
+# 开机检测时不要按任何键。
+BUTTON_MODE = "auto"
 
 # 消抖时间（秒）
 DEBOUNCE = 0.02
